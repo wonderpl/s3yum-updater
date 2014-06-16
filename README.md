@@ -19,6 +19,11 @@ notify the update daemon.
 By default the daemon is configured to keep only the last two versions of
 each package.
 
+---
+
+For full step-by-step installation instructions see [docs/install.md](docs/install.md)
+and [docs/cloudformation.json](docs/cloudformation.json).
+
 Install
 -------
 
@@ -54,5 +59,7 @@ Related Tools
 -------------
 
 https://github.com/seporaitis/yum-s3-iam
+
 https://wiki.jenkins-ci.org/display/JENKINS/S3+Plugin
+
 https://wiki.jenkins-ci.org/display/JENKINS/Amazon+SNS+Notifier

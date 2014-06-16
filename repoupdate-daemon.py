@@ -205,7 +205,11 @@ if __name__ == '__main__':
         import daemon
         daemon_args = {}
         if options.pidfile:
-            from daemon.pidlockfile import PIDLockFile
+            try:
+                # daemon 1.6+ uses pidfile module
+                from daemon.pidfile import PIDLockFile
+            except ImportError:
+                from daemon.pidlockfile import PIDLockFile
             daemon_args['pidfile'] = PIDLockFile(options.pidfile)
         if options.user:
             import pwd

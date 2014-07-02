@@ -95,12 +95,13 @@ def update_repodata(repopath, rpmfiles, options):
     # Create metadata generator
     mdconf = createrepo.MetaDataConfig()
     mdconf.directory = tmpdir
+    mdconf.pkglist = yum.packageSack.MetaSack()
     mdgen = createrepo.MetaDataGenerator(mdconf, LoggerCallback())
     mdgen.tempdir = tmpdir
     mdgen._grabber = s3grabber
 
     # Combine existing package sack with new rpm file list
-    new_packages = []
+    new_packages = yum.packageSack.PackageSack()
     for rpmfile in rpmfiles:
         newpkg = mdgen.read_in_package(os.path.join(s3base, rpmfile))
         newpkg._baseurl = ''   # don't leave s3 base urls in primary metadata
@@ -110,8 +111,10 @@ def update_repodata(repopath, rpmfiles, options):
             if i > options.keep or older.pkgtup == newpkg.pkgtup:
                 yumbase.pkgSack.delPackage(older)
                 logging.info('ignoring: %s', older.ui_nevra)
-        new_packages.append(newpkg)
-    mdconf.pkglist = list(yumbase.pkgSack) + new_packages
+        new_packages.addPackage(newpkg)
+
+    mdconf.pkglist.addSack('existing', yumbase.pkgSack)
+    mdconf.pkglist.addSack('new', new_packages)
 
     # Write out new metadata to tmpdir
     mdgen.doPkgMetadata()
@@ -167,7 +170,7 @@ def main(options, args):
                         update_repodata(repopath, set(rpmfiles), options)
                     except:
                         # sqs messages will be deleted even on failure
-                        logging.exception('update failed: %s', repopath)
+                        logging.exception('update failed: %s: %r', repopath, rpmfiles)
                 # Reset:
                 for message in messages:
                     message.delete()

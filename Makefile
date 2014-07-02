@@ -22,9 +22,12 @@ RPM ?= $(RPMDIR)/$(shell rpm --specfile $(SPEC) -q --qf '$(RPM_BUILDNAME)\n' $(D
 SOURCE0_URL ?= $(word 2, $(shell spectool -l -s 0 $(DEFINES) $(SPEC)))
 SOURCE0 ?= $(RPMDIR)/$(shell basename $(SOURCE0_URL))
 
-.PHONY: rpm install clean aws-resources
+.PHONY: rpm test install clean aws-resources
 
 rpm: $(RPM)
+
+test: $(RPM)
+	@python test.py
 
 install: $(RPM)
 	sudo yum localinstall $<

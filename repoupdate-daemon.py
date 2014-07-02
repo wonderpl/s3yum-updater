@@ -50,15 +50,24 @@ class S3Grabber(object):
         self.basepath = base.path.lstrip('/')
         self.bucket = boto.connect_s3().get_bucket(base.netloc)
 
-    def urlgrab(self, url, filename, **kwargs):
+    def _getkey(self, url):
         if url.startswith(self.baseurl):
             url = url[len(self.baseurl):].lstrip('/')
         key = self.bucket.get_key(os.path.join(self.basepath, url))
         if not key:
             raise createrepo.grabber.URLGrabError(14, '%s not found' % url)
+        return key
+
+    def urlgrab(self, url, filename, **kwargs):
+        key = self._getkey(url)
         logging.info('downloading: %s', key.name)
         key.get_contents_to_filename(filename)
         return filename
+
+    def urldelete(self, url):
+        key = self._getkey(url)
+        logging.info('removing: %s', key.name)
+        key.delete()
 
     def syncdir(self, dir, url):
         """Copy all files in dir to url, removing any existing keys."""
@@ -72,8 +81,8 @@ class S3Grabber(object):
             logging.info('uploading: %s', key.name)
         for key in existing_keys:
             if key.name not in new_keys:
-                key.delete()
                 logging.info('removing: %s', key.name)
+                key.delete()
 
 
 def update_repodata(repopath, rpmfiles, options):
@@ -88,6 +97,7 @@ def update_repodata(repopath, rpmfiles, options):
     yumbase.repos.disableRepo('*')
     repo = yumbase.add_enable_repo('s3')
     repo._grab = s3grabber
+    repo._urls = [os.path.join(s3base, '')]
     # Ensure that missing base path doesn't cause trouble
     repo._sack = yum.sqlitesack.YumSqlitePackageSack(
         createrepo.readMetadata.CreaterepoPkgOld)
@@ -110,7 +120,10 @@ def update_repodata(repopath, rpmfiles, options):
         for i, older in enumerate(reversed(older_pkgs), 1):
             if i > options.keep or older.pkgtup == newpkg.pkgtup:
                 yumbase.pkgSack.delPackage(older)
-                logging.info('ignoring: %s', older.ui_nevra)
+                if options.delete_old and i > options.keep:
+                    s3grabber.urldelete(older.remote_url)
+                else:
+                    logging.info('ignoring: %s', older.ui_nevra)
         new_packages.addPackage(newpkg)
 
     mdconf.pkglist.addSack('existing', yumbase.pkgSack)
@@ -189,7 +202,14 @@ if __name__ == '__main__':
     parser.add_option('-p', '--repopath', default='development/x86_64')
     parser.add_option('-r', '--region', default='us-east-1')
     parser.add_option('-q', '--sqs-name')
-    parser.add_option('-k', '--keep', type='int', default=2)
+    parser.add_option('-k', '--keep', type='int', default=2,
+                      help='''Specifies the number of versions of a package to keep.
+                              If there are more than K versions of a package when a
+                              new rpm is added, the oldest version is ignored and
+                              dropped from the respository.''')
+    parser.add_option('-D', '--delete-old', action='store_true',
+                      help='''Use with --keep. As well as dropping the old package
+                              version from the repository, delete the rpm file from s3.''')
     parser.add_option('-v', '--verbose', action='count', default=0)
     parser.add_option('-l', '--logfile')
     parser.add_option('-d', '--daemon', action='store_true')

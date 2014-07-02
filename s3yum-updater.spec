@@ -1,5 +1,5 @@
 Name: s3yum-updater
-Version: 1.1
+Version: 1.2
 Release: 1
 Summary: Daemon script for updating an s3-hosted yum repository
 Group: System Environment/Daemons

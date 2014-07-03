@@ -13,7 +13,7 @@ parser.add_option('--sns-topic', default='arn:aws:sns:us-east-1:123:packages-new
 options, args = parser.parse_args()
 
 sns = boto.sns.connect_to_region(options.region)
-bucket = boto.connect_s3().get_bucket(options.bucket)
+bucket = boto.connect_s3().get_bucket(options.bucket, validate=False)
 for rpmfile in args:
     filename = os.path.split(rpmfile)[1]
     key = bucket.new_key(os.path.join(options.repopath, filename))

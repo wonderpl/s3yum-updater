@@ -1,0 +1,276 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "CF template for s3yum-updater.\n Creates:\n - bucket to host the yum repository\n - queue & topic for yum update notifications\n - users for publishing to & updating the repository.",
+
+	"Parameters": {
+		"PackageBucketName": {
+			"Type": "String",
+			"Default": "packages.example.com"
+		},
+		"PackageTopicQueueName": {
+			"Type": "String",
+			"Default": "packages-new"
+		},
+		"PublicRepository": {
+			"Type": "String",
+			"Default": "false",
+			"AllowedValues": ["true", "false"]
+		}
+	},
+
+	"Conditions": {
+		"EnablePublicBucketAccess": {"Fn::Equals": [{"Ref": "PublicRepository"}, "true"]}
+	},
+
+	"Resources": {
+
+		"PackagesBucket": {
+			"Type": "AWS::S3::Bucket",
+			"Properties": {
+				"BucketName": {"Ref": "PackageBucketName"}
+			}
+		},
+
+		"PackagesNewQueue": {
+			"Type": "AWS::SQS::Queue",
+			"Properties": {
+				"QueueName": {"Ref": "PackageTopicQueueName"}
+			}
+		},
+
+		"PackagesNewTopic": {
+			"Type": "AWS::SNS::Topic",
+			"Properties": {
+				"TopicName": {"Ref": "PackageTopicQueueName"},
+				"Subscription": [
+					{
+						"Endpoint": { "Fn::GetAtt": ["PackagesNewQueue", "Arn"]},
+						"Protocol": "sqs"
+					}
+				]
+			}
+		},
+
+		"PackagesNewQueuePolicy": {
+			"Type": "AWS::SQS::QueuePolicy",
+			"Properties": {
+				"Queues": [
+					{"Ref": "PackagesNewQueue"}
+				],
+				"PolicyDocument": {
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Principal": {"AWS": "*"},
+							"Action": ["sqs:SendMessage"],
+							"Resource": { "Fn::GetAtt": ["PackagesNewQueue", "Arn"]},
+							"Condition": {
+								"ArnEquals": {
+									"aws:SourceArn": { "Ref": "PackagesNewTopic" }
+								}
+							}
+						}
+					]
+				}
+			}
+		},
+
+		"PackageUpdateUser": {
+			"Type": "AWS::IAM::User",
+			"Properties": {
+				"Policies": [
+					{
+						"PolicyName": "package-update-sqs",
+						"PolicyDocument": {
+							"Statement": [
+								{
+									"Effect": "Allow",
+									"Action": "sqs:ListQueues",
+									"Resource": "arn:aws:sqs:*"
+								},
+								{
+									"Effect": "Allow",
+									"Action": [
+										"sqs:GetQueue*",
+										"sqs:ReceiveMessage",
+										"sqs:DeleteMessage"
+									],
+									"Resource": [
+										{ "Fn::GetAtt": ["PackagesNewQueue", "Arn"]}
+									]
+								}
+							]
+						}
+					},
+					{
+						"PolicyName": "package-update-s3",
+						"PolicyDocument": {
+							"Statement": [
+								{
+									"Effect": "Allow",
+									"Action": "s3:ListAllMyBuckets",
+									"Resource": "arn:aws:s3:::*"
+								},
+								{
+									"Effect": "Allow",
+									"Action": "s3:ListBucket*",
+									"Resource": { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "PackagesBucket" } ]]}
+								},
+								{
+									"Effect": "Allow",
+									"Action": [
+										"s3:GetObject*",
+										"s3:PutObject*",
+										"s3:DeleteObject*"
+									],
+									"Resource": { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "PackagesBucket" }, "/*" ]]}
+								}
+							]
+						}
+					}
+				]
+			}
+		},
+
+		"PackageUpdateUserKey": {
+			"Type": "AWS::IAM::AccessKey",
+			"Properties": {
+				"UserName": {"Ref": "PackageUpdateUser"}
+			}
+		},
+
+		"PackagePublishUser": {
+			"Type": "AWS::IAM::User"
+		},
+
+		"PackagePublishUserKey": {
+			"Type": "AWS::IAM::AccessKey",
+			"Properties": {
+				"UserName": {"Ref": "PackagePublishUser"}
+			}
+		},
+
+		"PackagePublishGroup": {
+			"Type": "AWS::IAM::Group",
+			"Properties": {
+				"Policies": [
+					{
+						"PolicyName": "package-publish-sns",
+						"PolicyDocument": {
+							"Statement": [
+								{
+									"Effect": "Allow",
+									"Action": "sns:ListTopics",
+									"Resource": "arn:aws:sns:*"
+								},
+								{
+									"Effect": "Allow",
+									"Action": "sns:Publish",
+									"Resource": {"Ref": "PackagesNewTopic"}
+								}
+							]
+						}
+					},
+					{
+						"PolicyName": "package-publish-s3",
+						"PolicyDocument": {
+							"Statement": [
+								{
+									"Effect": "Allow",
+									"Action": "s3:ListAllMyBuckets",
+									"Resource": "arn:aws:s3:::*"
+								},
+								{
+									"Effect": "Allow",
+									"Action": "s3:PutObject",
+									"Resource": { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "PackagesBucket" }, "/*" ]]}
+								}
+							]
+						}
+					}
+				]
+			}
+		},
+
+		"PackagePublishGroupMembership": {
+			"Type": "AWS::IAM::UserToGroupAddition",
+			"Properties": {
+				"GroupName": {"Ref": "PackagePublishGroup"},
+				"Users": [
+					{"Ref": "PackagePublishUser"}
+				]
+			}
+		},
+
+		"PackagesReadPolicy": {
+			"Type": "AWS::IAM::Policy",
+			"Properties": {
+				"PolicyName": "packages-read-s3",
+				"PolicyDocument": {
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": "s3:ListAllMyBuckets",
+							"Resource": "arn:aws:s3:::*"
+						},
+						{
+							"Effect": "Allow",
+							"Action": "s3:ListBucket",
+							"Resource": { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "PackagesBucket" } ]]}
+						},
+						{
+							"Effect": "Allow",
+							"Action": "s3:GetObject",
+							"Resource": { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "PackagesBucket" }, "/*" ]]}
+						}
+					]
+				}
+			}
+		},
+
+		"PackagesBucketPolicy": {
+			"Type": "AWS::S3::BucketPolicy",
+			"Condition": "EnablePublicBucketAccess",
+			"Properties": {
+				"Bucket": { "Ref": "PackagesBucket" },
+				"PolicyDocument": {
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Principal": { "AWS": "*" },
+							"Action": "s3:GetObject",
+							"Resource": { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "PackagesBucket" }, "/*" ]]}
+						}
+					]
+				}
+			}
+		}
+
+	},
+
+	"Outputs": {
+
+		"PackageUpdateUserInfo": {
+			"Value": {"Fn::Join": ["", [
+				"\n",
+				"ARN=", { "Fn::GetAtt": [ "PackageUpdateUser", "Arn" ] }, "\n",
+				"AWSAccessKeyId=", {"Ref": "PackageUpdateUserKey"}, "\n",
+				"AWSSecretKey=", {"Fn::GetAtt": ["PackageUpdateUserKey", "SecretAccessKey"]}, "\n",
+				"\n"
+			]]}
+		},
+
+		"PackagePublishUserInfo": {
+			"Value": {"Fn::Join": ["", [
+				"\n",
+				"ARN=", { "Fn::GetAtt": [ "PackagePublishUser", "Arn" ] }, "\n",
+				"AWSAccessKeyId=", {"Ref": "PackagePublishUserKey"}, "\n",
+				"AWSSecretKey=", {"Fn::GetAtt": ["PackagePublishUserKey", "SecretAccessKey"]}, "\n",
+				"\n"
+			]]}
+		}
+
+	}
+
+}

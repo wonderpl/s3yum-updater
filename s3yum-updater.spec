@@ -1,5 +1,5 @@
 Name: s3yum-updater
-Version: 1.0
+Version: 1.2
 Release: 1
 Summary: Daemon script for updating an s3-hosted yum repository
 Group: System Environment/Daemons
@@ -49,6 +49,11 @@ fi
 %{_bindir}/*
 
 %changelog
+* Mon Jun 23 2014 Paul Egan <paulegan@mail.com> - 1.1-1
+- Added step-by-step install documentation and CloudFormation config
+- Added Makefile
+- Support createrepo >= 0.10.1
+- Support python-daemon >= 1.6
+
 * Thu Jan 31 2013 Paul Egan <paulegan@rockpack.com> - 1.0-1
 - Initial release
-

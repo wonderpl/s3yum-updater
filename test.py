@@ -76,7 +76,8 @@ class RepoUpdateTestCase(unittest.TestCase):
         with mock.patch('boto.auth.get_auth_handler'):
             with mock.patch('boto.s3.connection.S3Connection.head_bucket',
                             return_value=MockS3Bucket(self.tmpdir)):
-                options = type('Options', (object,), dict(bucket='local', keep=1))()
+                options = type('Options', (object,),
+                               dict(bucket='local', keep=1, delete_old=False))()
                 repoupdate.update_repodata(self.repo, ['test.rpm'], options)
 
         repo = _openrepo(self.repopath, cachedir=os.path.join(self.tmpdir, 'ycache'))
